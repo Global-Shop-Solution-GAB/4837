@@ -1,0 +1,125 @@
+Program.Sub.Preflight.Start
+
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+
+
+V.Local.sRet.Declare(String)
+V.Local.sRet2.Declare(String)
+V.Local.sRet3.Declare(String)
+V.Local.sSql.Declare(String)
+V.Local.i.Declare(Long)
+V.Local.i2.Declare(Long)
+V.Local.iRowCnt.Declare(Long)
+V.local.sReadRow.Declare(String)
+V.Local.sIssue.Declare(String)
+V.Local.sWriteRow.Declare(String)
+v.local.iRet.Declare(Long)
+V.Local.sHeat.Declare(String)
+'
+'F.Intrinsic.Debug.InvokeDebugger
+'
+'F.Intrinsic.Debug.Stop
+
+
+'program will validate that user is selecting from 1 lot only when the comments_3 field of the job_header contains 'NO MIXED or NO MIXED HEAT or NO MIXED HEATS'
+' if nothing in the comments_3 field matches any of those entries program wil function as normal and user can select from multiple lot/bins
+
+f.Intrinsic.Control.If(v.Caller.Hook,=,32913)
+	F.ODBC.Connection!conX.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+	
+	F.Intrinsic.String.Concat("select ucase(comments_3) as comments_3 from v_job_header where job = '",V.Passed.WORK-ORDER,"' and suffix = '",V.Passed.SUFFIX,"'",V.Local.sSql)
+	F.ODBC.Connection!conX.OpenRecordsetRO("rst",V.Local.sSql)
+	'check to see if there is a record in comments_3 of job header for the program.
+	F.Intrinsic.Control.if(V.ODBC.conX!rst.EOF,=,True)
+		F.Intrinsic.UI.Msgbox("No Records Exist for this Job","")
+		F.ODBC.conX!rst.Close
+	F.Intrinsic.Control.Else
+		V.Local.sRet.Set(V.ODBC.conX!rst.FieldValTrim!COMMENTS_3)
+		f.Intrinsic.String.Occurs(V.Local.sRet,"NO MIXED",v.local.iRet)
+		f.Intrinsic.Control.If(v.local.iRet,>,0)
+			F.Intrinsic.BDF.Load("AUX001","AUX001")
+			F.Intrinsic.BDF.Clone("AUX001","Clone")
+			F.Intrinsic.BDF.ReadRowCount("AUX001",V.Local.iRowCnt)
+			F.Intrinsic.Math.Sub(V.Local.iRowCnt,1,V.Local.iRowCnt)
+			F.Intrinsic.Control.If(V.Local.iRowCnt,>,-1)
+				F.Intrinsic.Control.For(V.Local.i2,0,V.Local.iRowCnt,1)
+					F.Intrinsic.BDF.ReadRow("AUX001",V.Local.i2,V.Local.sReadRow)
+					F.Intrinsic.String.Split(V.Local.sReadRow,"|~|",V.Local.sReadRow)
+					
+					'get Heat Field from sReadrow and check item_history for record <> 'HEAT', Job, suffix
+					'if there is a differnt HEAT already issued to the job then do not allow them to continue.
+					'ITEM_History J35
+	'				F.Intrinsic.Debug.Stop					
+					F.Intrinsic.Control.If(V.Local.sReadRow(9),>,0)
+						F.Intrinsic.Math.Add(V.Local.i,1,V.Local.i)
+						f.Intrinsic.Control.If(V.Local.sHeat,=,"")
+							V.Local.sHeat.Set(V.Local.sReadRow(4).trim)
+							f.Intrinsic.String.Build("'{0}'",V.Local.sReadRow(4).trim,V.Local.sHeat)
+						f.Intrinsic.Control.else
+							f.Intrinsic.String.Build("{0},'{1}'",V.Local.sHeat,V.Local.sReadRow(4).trim,V.Local.sHeat)
+						F.Intrinsic.Control.EndIf
+					F.Intrinsic.Control.EndIf
+				F.Intrinsic.Control.Next(V.Local.i2)
+			f.Intrinsic.Control.endif
+			
+			F.Intrinsic.Debug.Stop
+			F.Intrinsic.Control.If(V.Local.i,=,1)
+				f.Intrinsic.String.Build("select job from Item_history where code_Transaction = 'J55' and job='{0}' and suffix = '{1}' and Heat not in ({2})",Variable.Passed.WORK-ORDER,Variable.Passed.SUFFIX,V.Local.sHeat,v.Local.ssql)
+				F.ODBC.Connection!conX.OpenLocalRecordsetRO("rst1",V.Local.sSql)
+				F.Intrinsic.Control.if(V.ODBC.conX!rst1.EOF,=,False)
+					V.Passed.777777.Set(1)
+					F.Intrinsic.UI.Msgbox("NO MIXED HEATS- Multiple Certs Not Allowed!","NO MIXED HEATS")
+				f.Intrinsic.Control.endif
+				F.ODBC.conX!rst1.Close
+			F.Intrinsic.Control.elseIf(V.Local.i,>,1)
+				V.Passed.777777.Set(1)
+				F.Intrinsic.UI.Msgbox("NO MIXED HEATS- Multiple Certs Not Allowed!","NO MIXED HEATS")
+			f.Intrinsic.Control.endif
+			
+			'RESETs LOTBIN Screen
+	'		F.Intrinsic.Control.If(V.Local.i,>,1)
+	'			V.Local.i.Set(0)
+	'			F.Intrinsic.BDF.ReadRowCount("AUX001",V.Local.iRowCnt)
+	'			F.Intrinsic.Math.Sub(V.Local.iRowCnt,1,V.Local.iRowCnt)
+	'			F.Intrinsic.Control.For(V.Local.i,0,V.Local.iRowCnt,1)
+	'				F.Intrinsic.BDF.ReadRow("AUX001",V.Local.i,V.Local.sReadRow)
+	'				F.Intrinsic.String.Split(V.Local.sReadRow,"|~|",V.Local.sReadRow)
+	'				V.Local.sReadRow(9).Set(0.0000)
+	'				
+	'				F.Intrinsic.String.Concat(V.Local.sReadRow(0),"|~|",V.Local.sReadRow(1),"|~|",V.Local.sReadRow(2),"|~|",V.Local.sReadRow(3),"|~|",V.Local.sReadRow(4),"|~|",V.Local.sReadRow(5),"|~|",V.Local.sReadRow(6),"|~|",V.Local.sReadRow(7),"|~|",V.Local.sReadRow(8),"|~|",V.Local.sReadRow(9),"|~|",V.Local.sReadRow(10),V.Local.sReadRow(12),"|~|",V.Local.sReadRow(11),"|~|",V.Local.sReadRow(12),"|~|",V.Local.sReadRow(13),"|~|",V.Local.sReadRow(14),V.Local.sWriteRow)
+	'				F.Intrinsic.BDF.WriteRow("Clone",V.Local.sWriteRow)
+	'			F.Intrinsic.Control.Next(V.Local.i)
+	'			F.Intrinsic.BDF.Save("Clone","AUX001")
+	'			V.Passed.777777.Set(1)
+	'			F.Intrinsic.UI.Msgbox("NO MIXED HEATS- Multiple Certs Not Allowed!","NO MIXED HEATS")
+	'		F.Intrinsic.Control.EndIf
+				
+				
+		f.Intrinsic.Control.endif
+	f.Intrinsic.Control.endif
+f.Intrinsic.Control.endif
+f.Intrinsic.Control.End
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4837_ValidateHEAT.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Main.End
+
+Program.Sub.Comments.Start
+${$0$}$GCG_4837_ValidateHEAT$}$RAN$}$11/10/2017 9:36:52 AM$}$False
+${$3$}$0$}$$}$0$}$-1$}$$}$12:00:00 AM$}$'program will validate that user is selecting from 1 lot only when the comments_3 field of the job_header contains 'NO MIXED or NO MIXED HEAT or NO MIXED HEATS'
+' if nothing in the comments_3 field matches any of those entries program wil function as normal and user can select from multiple lot/bins
+Program.Sub.Comments.End
